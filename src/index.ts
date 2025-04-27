@@ -1,67 +1,93 @@
-import {
-    Client,
-    Events,
-    GatewayIntentBits,
-    SlashCommandBuilder,
-    Partials,
-    REST,
-    Routes,
-    Collection
-} from "discord.js";
-import type { SlashCommand } from "./types";
-import { join } from "path";
-import { readdirSync } from "fs";
-import dotenv from "dotenv";
-dotenv.config();
-import testCommand from "./slashCommands/ping";
+import { Client, GatewayIntentBits, Collection, Events, Message } from 'discord.js';
+import { readdirSync } from 'fs';
+import { join } from 'path';
+import dotenv from 'dotenv';
+import type { MessageCommand } from './types';
+import logger from './utils/logger';
 
-const token = process.env.DISCORD_TOKEN; // Token from Railway Env Variable.
-const client_id = process.env.CLIENT_ID;
+// Configurer les variables d'environnement
+dotenv.config();
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN || '';
+const PREFIX = process.env.PREFIX || '!';
+
+// Création du client Discord avec les intents nécessaires
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.MessageContent,
-    ],
-    partials: [Partials.Channel],
-});
-client.once(Events.ClientReady, async (c) => {
-    console.log(`Logged in as ${c.user.tag}`);
-});
-console.log("jweqioweqeqww");
-
-const slashCommands = new Collection<string, SlashCommand>()
-slashCommands.set(testCommand.command.name, testCommand)
-const slashCommandsArr: SlashCommandBuilder[] = [testCommand.command]
-
-const rest = new REST({ version: "10" }).setToken(token);
-rest.put(Routes.applicationCommands(client_id), {
-    body: slashCommandsArr.map(command => command.toJSON())
-}).then((data: any) => {
-    console.log(`🔥 Successfully loaded ${data.length} slash command(s)`)
-}).catch(e => {
-    console.log(e)
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
 });
 
-client.on(Events.InteractionCreate, async interaction => {
-    if (!interaction.isChatInputCommand()) return;
-    const command = slashCommands.get(interaction.commandName);
+// Collection pour stocker les commandes par message
+const messageCommands = new Collection<string, MessageCommand>();
 
-    if (!command) {
-        console.error(`No command matching ${interaction.commandName} was found.`);
-        return;
-    }
+// Charger les commandes de message
+const commandFiles = readdirSync(join(__dirname, "commands/music")).filter(
+    (file) => file.endsWith(".ts") || file.endsWith(".js")
+);
 
+for (const file of commandFiles) {
     try {
-        await command.execute(interaction);
-    } catch (error) {
-        console.error(error);
-        if (interaction.replied || interaction.deferred) {
-            await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
-        } else {
-            await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const command = require(`./commands/music/${file}`).default;
+        messageCommands.set(command.name, command);
+        logger.debug(`Commande chargée: ${command.name}`);
+        if (command.aliases) {
+            for (const alias of command.aliases) {
+                messageCommands.set(alias, command);
+                logger.debug(`Alias chargé: ${alias} -> ${command.name}`);
+            }
+        }
+    } catch (err) {
+        logger.error(`Erreur lors du chargement de la commande: ${file}`, err);
+    }
+}
+logger.success(`${commandFiles.length} commandes musicales chargées`);
+
+// NOTE: Implémentation du lecteur de musique supprimée
+// C'est ici que vous pourrez implémenter votre propre solution de lecteur de musique
+
+// Événement de connexion du client
+client.once("ready", () => {
+    logger.success(`✅ Connecté en tant que ${client.user?.tag}`);
+});
+
+// Gérer les commandes de message (non-slash)
+client.on("messageCreate", async (message: Message) => {
+    // Ignore les messages des bots
+    if (message.author.bot || !message.guild) return;
+
+    // Gérer les commandes avec préfixe
+    if (message.content.startsWith(PREFIX)) {
+        const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
+        const commandName = args.shift()?.toLowerCase();
+
+        if (!commandName) return;
+
+        const command = messageCommands.get(commandName);
+        if (!command) return;
+
+        try {
+            logger.command(commandName, `${message.author.tag} (${message.author.id}) sur ${message.guild.name}`);
+            await command.execute(message, args);
+        } catch (error) {
+            logger.error(`Erreur lors de l'exécution de la commande: ${commandName}`, error);
+            await message.reply(
+                "❌ Une erreur est survenue lors de l'exécution de cette commande!"
+            );
         }
     }
 });
+
+// Connexion du client Discord
+logger.info("Tentative de connexion à Discord...");
 client
-    .login(token)
-    .catch((error) => console.error("Discord.Client.Login.Error", error));
+    .login(DISCORD_TOKEN)
+    .then(() => {
+        logger.debug("Token accepté, connexion en cours...");
+    })
+    .catch((error) => {
+        logger.error("Erreur de connexion à Discord", error);
+    });

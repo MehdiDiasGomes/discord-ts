@@ -1,0 +1,24 @@
+.
+├── package-lock.json
+├── package.json
+├── pnpm-lock.yaml
+├── project-structure.txt
+├── README.md
+├── src
+│   ├── commands
+│   │   └── music
+│   │       ├── disconnect.ts
+│   │       ├── next.ts
+│   │       ├── play.ts
+│   │       └── salut.ts
+│   ├── config.ts
+│   ├── index.alternative.ts
+│   ├── index.new.ts
+│   ├── index.ts
+│   ├── 'index copy.ts'
+│   ├── slashCommands
+│   │   └── ping.ts
+│   ├── types.ts
+│   └── utils
+│       └── logger.ts
+└── tsconfig.json
